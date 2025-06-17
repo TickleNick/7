@@ -182,3 +182,117 @@ async def job_status(job_id: str):
     return {"status": "running" if exists else "done"}
 
 app.mount("/static", StaticFiles(directory="output"), name="static")
+video_ai_backend/
+├── app/
+│   ├── main.py                     # Entry point for FastAPI (app = FastAPI())
+│   ├── services/
+│   │   └── video_service.py        # Core logic to process prompts & generate video
+│   ├── models/
+│   │   └── request_models.py       # Pydantic models for request/response
+│   ├── routes/
+│   │   └── video_routes.py         # Route handlers for /generate, etc.
+│   ├── utils/
+│   │   └── helpers.py              # Optional: helper functions (file paths, video utils)
+│   └── static/                     # For serving generated video files (if any)
+│       └── output/                 # Output directory for generated video files
+├── requirements.txt                # Python dependencies
+├── README.md                       # Project overview
+├── .env                            # (Optional) Configs like API keysfrom fastapi import FastAPI
+from app.routes import video_routes
+
+app = FastAPI()
+
+app.include_router(video_routes.router)from fastapi import APIRouter
+from app.models.request_models import VideoRequest
+from app.services.video_service import process_prompt_and_generate_video
+
+router = APIRouter()
+
+@router.post("/generate")
+async def generate_video(request: VideoRequest):
+    return await process_prompt_and_generate_video(request.prompt, request.resolution)from pydantic import BaseModel
+
+class VideoRequest(BaseModel):
+    prompt: str
+    resolution: strimport uuid
+import os
+
+async def process_prompt_and_generate_video(prompt: str, resolution: str) -> dict:
+    output_file = f"app/static/output/video_{uuid.uuid4()}.mp4"
+    # Dummy generation logic
+    with open(output_file, "w") as f:
+        f.write(f"Generated video for prompt: {prompt}, resolution: {resolution}")
+    return {"video_url": output_file}3c6795add7f18b90d289d0af325a7b7e40cdcee103a08fa2ec4da5c92b49e835https://six-yx3h.onrender.com52.41.36.82
+54.191.253.12
+44.226.122.3a74486defce06ec7626708a8c9aab061from app.prompt_parser import parse_prompt
+from app.video_generator import generate_video_with_pixverse
+from app.video_editor import apply_edits
+
+def process_prompt_and_generate_video(prompt: str, resolution: str, output_path: str, use_ai_music: bool = True):
+    instructions = parse_prompt(prompt)
+    instructions["use_ai_music"] = use_ai_music
+    video_path = generate_video_with_pixverse(prompt, resolution)
+    apply_edits(video_path, output_path, instructions)
+    return output_pathfrom moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip, vfx
+from app.utils.music_generator import generate_background_music
+
+def apply_edits(input_path: str, output_path: str, instructions: dict):
+    clip = VideoFileClip(input_path)
+    if "speed" in instructions:
+        clip = clip.fx(vfx.speedx, instructions["speed"])
+    if instructions.get("filter") == "grayscale":
+        clip = clip.fx(vfx.blackwhite)
+    mood = instructions.get("mood", "ambient")
+    use_ai = instructions.get("use_ai_music", True)
+    music_path = generate_background_music(duration=int(clip.duration), style=mood, use_ai=use_ai)
+    if music_path:
+        audio = AudioFileClip(music_path).set_duration(clip.duration)
+        new_audio = CompositeAudioClip([clip.audio, audio]) if clip.audio else audio
+        clip = clip.set_audio(new_audio)
+    clip.write_videofile(output_path, codec="libx264", audio_codec="aac")import os
+import requests
+from pydub.generators import Sine
+from pydub import AudioSegment
+
+MUBERT_API_KEY = os.getenv("MUBERT_API_KEY")
+MUBERT_EMAIL = os.getenv("MUBERT_EMAIL")
+
+def generate_music_with_pydub(path="assets/generated_music.mp3", duration=10):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tone1 = Sine(440).to_audio_segment(duration=500)
+    tone2 = Sine(554).to_audio_segment(duration=500)
+    tone3 = Sine(660).to_audio_segment(duration=500)
+    silence = AudioSegment.silent(duration=250)
+    sequence = tone1 + silence + tone2 + silence + tone3 + silence
+    full_music = sequence * (duration * 1000 // len(sequence))
+    full_music.export(path, format="mp3")
+    return path
+
+def generate_music_with_ai(style="ambient", duration=30, path="assets/generated_music.mp3"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not MUBERT_API_KEY or not MUBERT_EMAIL:
+        raise ValueError("Missing Mubert credentials")
+    payload = {
+        "email": MUBERT_EMAIL,
+        "token": MUBERT_API_KEY,
+        "mode": "track",
+        "genre": style,
+        "duration": duration,
+        "format": "mp3"
+    }
+    r = requests.post("https://api.mubert.com/v2/Generate", json=payload)
+    r.raise_for_status()
+    audio_url = r.json()["data"]["track_url"]
+    content = requests.get(audio_url).content
+    with open(path, "wb") as f:
+        f.write(content)
+    return path
+
+def generate_background_music(duration=30, style="ambient", use_ai=True, path="assets/generated_music.mp3"):
+    try:
+        if use_ai:
+            return generate_music_with_ai(style=style, duration=duration, path=path)
+        raise ValueError("AI disabled")
+    except Exception as e:
+        print("⚠️ Fallback:", e)
+        return generate_music_with_pydub(path=path, duration=duration)
